@@ -1,0 +1,107 @@
+### Environment Setup
+@baseUrl = http://localhost:8080
+@contentType = application/json
+@username = user123
+@password = Test123!
+
+
+### Register User
+# @name register
+POST {{baseUrl}}/register
+Content-Type: {{contentType}}
+
+{
+    "username": "{{username}}",
+    "password": "{{password}}"
+}
+
+### Login User
+# @name login
+POST {{baseUrl}}/login
+Content-Type: {{contentType}}
+
+{
+    "username": "{{username}}",
+    "password": "{{password}}"
+}
+
+### Store auth token from login
+@authToken = {{login.response.body.data}}
+
+
+### Create Blog Post Pubsub
+POST {{baseUrl}}/post/pubsub
+Content-Type: {{contentType}}
+Authorization: Bearer {{authToken}}
+
+{
+    "username": "{{username}}",
+    "title": "Test Blog Post",
+    "content": "This is a test blog post content",
+    "description": "This is a test blog post description"
+}
+
+### Create Blog Post
+# @name createPost
+POST {{baseUrl}}/post
+Content-Type: {{contentType}}
+Authorization: Bearer {{authToken}}
+
+{
+    "username": "{{username}}",
+    "title": "Test Blog Post",
+    "content": "This is a test blog post content",
+    "description": "This is a test blog post description"
+}
+
+
+### Add Comment
+POST {{baseUrl}}/comments
+Content-Type: {{contentType}}
+Authorization: Bearer {{authToken}}
+
+{
+    "username": "{{username}}",
+    "post_id": "{{createPost.response.body.data.id}}",
+    "comment": "This is a test comment"
+}
+
+### Add Comment Pubsub
+POST {{baseUrl}}/comments/pubsub
+Content-Type: {{contentType}}
+Authorization: Bearer {{authToken}}
+
+{
+    "username": "{{username}}",
+    "post_id": "{{createPost.response.body.data.id}}",
+    "comment": "This is a test comment"
+}
+
+### Add Like
+POST {{baseUrl}}/likes
+Content-Type: {{contentType}}
+Authorization: Bearer {{authToken}}
+
+{
+    "post_id": "{{createPost.response.body.data.id}}",
+    "username_from" : "{{username}}"
+}
+
+### Add Like Pubsub
+POST {{baseUrl}}/likes/pubsub
+Content-Type: {{contentType}}
+Authorization: Bearer {{authToken}}
+
+{
+    "post_id": "{{createPost.response.body.data.id}}",
+    "username_from" : "{{username}}"
+}
+
+### Get User Summary
+POST {{baseUrl}}/summary
+Content-Type: {{contentType}}
+Authorization: Bearer {{authToken}}
+
+{
+    "username": "{{username}}"
+}
