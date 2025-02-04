@@ -5,26 +5,10 @@ import (
 	"os"
 	"testing"
 
-	"cloud.google.com/go/firestore"
 	"github.com/stretchr/testify/assert"
 	"github.com/ynwd/awesome-blog/internal/users/domain"
 	"github.com/ynwd/awesome-blog/tests/helper"
 )
-
-// cleanupFirestore deletes all documents in the given collection.
-func cleanupFirestore(t *testing.T, client *firestore.Client, collection string) {
-	ctx := context.Background()
-	docs, err := client.Collection(collection).Documents(ctx).GetAll()
-	if err != nil {
-		t.Fatalf("Failed to get documents for cleanup: %v", err)
-	}
-	for _, doc := range docs {
-		_, err := doc.Ref.Delete(ctx)
-		if err != nil {
-			t.Fatalf("Failed to delete document: %v", err)
-		}
-	}
-}
 
 func TestCreateUser(t *testing.T) {
 	db := helper.SetupRepoClient(t)
@@ -33,8 +17,10 @@ func TestCreateUser(t *testing.T) {
 	repo := NewFirestoreUserRepository(db)
 
 	// Clean up Firestore before and after the test
-	cleanupFirestore(t, db, os.Getenv("GOOGLE_CLOUD_FIRESTORE_COLLECTION_USERS"))
-	defer cleanupFirestore(t, db, os.Getenv("GOOGLE_CLOUD_FIRESTORE_COLLECTION_USERS"))
+	err := helper.CleanDatabase()
+	assert.NoError(t, err)
+
+	defer helper.CleanDatabase()
 
 	// Test data
 	user := domain.User{
@@ -43,7 +29,7 @@ func TestCreateUser(t *testing.T) {
 	}
 
 	// Test Create
-	err := repo.Create(context.Background(), user)
+	err = repo.Create(context.Background(), user)
 	assert.NoError(t, err)
 
 	// Verify the user was created
@@ -68,8 +54,10 @@ func TestGetByUsernameAndPassword(t *testing.T) {
 	repo := NewFirestoreUserRepository(client)
 
 	// Clean up Firestore before and after the test
-	cleanupFirestore(t, client, os.Getenv("GOOGLE_CLOUD_FIRESTORE_COLLECTION_USERS"))
-	defer cleanupFirestore(t, client, os.Getenv("GOOGLE_CLOUD_FIRESTORE_COLLECTION_USERS"))
+	err := helper.CleanDatabase()
+	assert.NoError(t, err)
+
+	defer helper.CleanDatabase()
 
 	// Test data
 	user := domain.User{
@@ -78,7 +66,7 @@ func TestGetByUsernameAndPassword(t *testing.T) {
 	}
 
 	// Create a user
-	_, _, err := client.Collection("users").Add(context.Background(), user)
+	_, _, err = client.Collection("users").Add(context.Background(), user)
 	assert.NoError(t, err)
 
 	// Test GetByUsernameAndPassword
@@ -98,8 +86,10 @@ func TestIsUsernameExists(t *testing.T) {
 	repo := NewFirestoreUserRepository(client)
 
 	// Clean up Firestore before and after the test
-	cleanupFirestore(t, client, os.Getenv("GOOGLE_CLOUD_FIRESTORE_COLLECTION_USERS"))
-	defer cleanupFirestore(t, client, os.Getenv("GOOGLE_CLOUD_FIRESTORE_COLLECTION_USERS"))
+	err := helper.CleanDatabase()
+	assert.NoError(t, err)
+
+	defer helper.CleanDatabase()
 
 	// Test data
 	user := domain.User{

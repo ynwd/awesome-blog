@@ -54,21 +54,17 @@ func createTestData(ctx context.Context, client *firestore.Client, testDate time
 	return nil
 }
 
-func cleanDb(t *testing.T, client *firestore.Client) {
-	helper.CleanupFirestore(t, client, "likes")
-	helper.CleanupFirestore(t, client, "comments")
-	helper.CleanupFirestore(t, client, "posts")
-	helper.CleanupFirestore(t, client, "users")
-}
-
 func TestSummaryRepository_GetUserSummary(t *testing.T) {
 	ctx := context.Background()
 	client := helper.SetupRepoClient(t)
-	cleanDb(t, client)
-	defer cleanDb(t, client)
+	err := helper.CleanDatabase()
+	assert.NoError(t, err)
+	defer func() {
+		helper.CleanDatabase()
+	}()
 
 	testDate := time.Date(2025, 2, 1, 0, 0, 0, 0, time.UTC)
-	err := createTestData(ctx, client, testDate)
+	err = createTestData(ctx, client, testDate)
 	assert.NoError(t, err)
 
 	repo := NewSummaryRepository(client)

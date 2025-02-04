@@ -14,21 +14,6 @@ import (
 	"github.com/ynwd/awesome-blog/tests/helper"
 )
 
-func cleanupFirestore(t *testing.T, client *firestore.Client, collection string) {
-	ctx := context.Background()
-	docs, err := client.Collection(collection).Documents(ctx).GetAll()
-	if err != nil {
-		t.Fatalf("Failed to get documents for cleanup: %v", err)
-	}
-
-	for _, doc := range docs {
-		_, err := doc.Ref.Delete(ctx)
-		if err != nil {
-			t.Fatalf("Failed to delete document during cleanup: %v", err)
-		}
-	}
-}
-
 var postID string
 
 // setup users and posts
@@ -60,12 +45,6 @@ func setupUsersAndPosts(t *testing.T, client *firestore.Client) {
 		t.Fatalf("Failed to create post: %v", err)
 	}
 
-}
-
-func cleanDatabase(t *testing.T, client *firestore.Client) {
-	cleanupFirestore(t, client, "comments")
-	cleanupFirestore(t, client, "users")
-	cleanupFirestore(t, client, "posts")
 }
 
 func TestCommentsRepository_Create(t *testing.T) {
@@ -104,7 +83,7 @@ func TestCommentsRepository_Create(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			defer cleanDatabase(t, client)
+			defer helper.CleanDatabase()
 
 			ctx := context.Background()
 			err := repo.Create(ctx, tt.comment)

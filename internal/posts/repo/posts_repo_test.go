@@ -67,7 +67,12 @@ func TestPostsFirestore_Create(t *testing.T) {
 
 func TestPostsFirestore_GetAll(t *testing.T) {
 	client := helper.SetupRepoClient(t)
-	defer client.Close()
+	err := helper.CleanDatabase()
+	assert.NoError(t, err)
+
+	defer func() {
+		helper.CleanDatabase()
+	}()
 
 	repo := NewPostsRepository(client)
 	ctx := context.Background()
