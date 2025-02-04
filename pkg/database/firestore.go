@@ -7,12 +7,14 @@ import (
 	"cloud.google.com/go/firestore"
 )
 
+// FirestoreDB is a struct that holds the firestore client
 type FirestoreDB struct {
 	ProjectID  string
 	DatabaseID string
 	client     *firestore.Client
 }
 
+// NewFirestore creates a new FirestoreDB struct
 func NewFirestore(projectID, databaseID string) *FirestoreDB {
 	return &FirestoreDB{
 		ProjectID:  projectID,
@@ -20,6 +22,7 @@ func NewFirestore(projectID, databaseID string) *FirestoreDB {
 	}
 }
 
+// Connect creates a new firestore client and assigns it to the FirestoreDB struct
 func (db *FirestoreDB) Connect(ctx context.Context) error {
 	client, err := firestore.NewClientWithDatabase(
 		ctx,
@@ -41,6 +44,10 @@ func (db *FirestoreDB) Close() error {
 	return nil
 }
 
-func (db *FirestoreDB) Client() *firestore.Client {
-	return db.client
+// Client returns the firestore client
+func (db *FirestoreDB) Client() (*firestore.Client, error) {
+	if db.client == nil {
+		return nil, fmt.Errorf("firestore client is not initialized")
+	}
+	return db.client, nil
 }

@@ -2,28 +2,14 @@ package repo
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
 	"cloud.google.com/go/firestore"
 	"github.com/stretchr/testify/assert"
 	"github.com/ynwd/awesome-blog/internal/summary/domain"
-	"github.com/ynwd/awesome-blog/pkg/database"
 	"github.com/ynwd/awesome-blog/tests/helper"
 )
-
-func setupFirestore(t *testing.T) *firestore.Client {
-	os.Setenv("GOOGLE_CLOUD_PROJECT_ID", "softion-playground")
-	os.Setenv("GOOGLE_CLOUD_FIRESTORE_DATABASE_ID", "blogdb-yanu-widodo")
-
-	database := database.NewFirestore(os.Getenv("GOOGLE_CLOUD_PROJECT_ID"), os.Getenv("GOOGLE_CLOUD_FIRESTORE_DATABASE_ID"))
-	err := database.Connect(context.Background())
-	assert.NoError(t, err)
-	client := database.Client()
-
-	return client
-}
 
 func createTestData(ctx context.Context, client *firestore.Client, testDate time.Time) error {
 	testData := []struct {
@@ -77,7 +63,7 @@ func cleanDb(t *testing.T, client *firestore.Client) {
 
 func TestSummaryRepository_GetUserSummary(t *testing.T) {
 	ctx := context.Background()
-	client := setupFirestore(t)
+	client := helper.SetupRepoClient(t)
 	cleanDb(t, client)
 	defer cleanDb(t, client)
 

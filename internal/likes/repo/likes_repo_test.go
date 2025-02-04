@@ -2,28 +2,27 @@ package repo
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
 	"cloud.google.com/go/firestore"
 	"github.com/stretchr/testify/assert"
 	"github.com/ynwd/awesome-blog/internal/likes/domain"
-	"github.com/ynwd/awesome-blog/pkg/database"
+	"github.com/ynwd/awesome-blog/tests/helper"
 )
 
-func setupTestEnv(_ *testing.T) (context.Context, *firestore.Client) {
-	os.Setenv("GOOGLE_CLOUD_PROJECT_ID", "softion-playground")
-	os.Setenv("GOOGLE_CLOUD_FIRESTORE_DATABASE_ID", "blogdb-yanu-widodo")
-	os.Setenv("GOOGLE_CLOUD_FIRESTORE_COLLECTION_LIKES", "likes")
+// func setupTestEnv(_ *testing.T) (context.Context, *firestore.Client) {
+// 	os.Setenv("GOOGLE_CLOUD_PROJECT_ID", "softion-playground")
+// 	os.Setenv("GOOGLE_CLOUD_FIRESTORE_DATABASE_ID", "blogdb-yanu-widodo")
+// 	os.Setenv("GOOGLE_CLOUD_FIRESTORE_COLLECTION_LIKES", "likes")
 
-	ctx := context.Background()
-	db := database.NewFirestore(os.Getenv("GOOGLE_CLOUD_PROJECT_ID"), os.Getenv("GOOGLE_CLOUD_FIRESTORE_DATABASE_ID"))
-	db.Connect(ctx)
-	client := db.Client()
+// 	ctx := context.Background()
+// 	db := database.NewFirestore(os.Getenv("GOOGLE_CLOUD_PROJECT_ID"), os.Getenv("GOOGLE_CLOUD_FIRESTORE_DATABASE_ID"))
+// 	db.Connect(ctx)
+// 	client := db.Client()
 
-	return ctx, client
-}
+// 	return ctx, client
+// }
 
 func cleanupCollection(ctx context.Context, client *firestore.Client, collection string) error {
 	docs, err := client.Collection(collection).Documents(ctx).GetAll()
@@ -41,7 +40,8 @@ func cleanupCollection(ctx context.Context, client *firestore.Client, collection
 }
 
 func TestLikesRepository_Create(t *testing.T) {
-	ctx, client := setupTestEnv(t)
+	ctx := context.Background()
+	client := helper.SetupRepoClient(t)
 	defer client.Close()
 
 	// Cleanup before test

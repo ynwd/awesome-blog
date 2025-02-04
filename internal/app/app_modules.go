@@ -1,6 +1,8 @@
 package app
 
 import (
+	"log"
+
 	"github.com/ynwd/awesome-blog/internal/comments"
 	"github.com/ynwd/awesome-blog/internal/likes"
 	"github.com/ynwd/awesome-blog/internal/posts"
@@ -18,7 +20,10 @@ func (a *App) setupModules() {
 	a.router.Use(auth)
 
 	// Register modules
-	client := a.firestoreDB.Client()
+	client, err := a.firestoreDB.Client()
+	if err != nil {
+		log.Fatal("Failed to get firestore client:", err)
+	}
 	modules := []module.Module{
 		users.NewModule(client),
 		posts.NewModule(client, a.pubsub),

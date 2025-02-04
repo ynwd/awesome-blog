@@ -8,27 +8,8 @@ import (
 	"cloud.google.com/go/firestore"
 	"github.com/stretchr/testify/assert"
 	"github.com/ynwd/awesome-blog/internal/users/domain"
-	"github.com/ynwd/awesome-blog/pkg/database"
+	"github.com/ynwd/awesome-blog/tests/helper"
 )
-
-// setup environment variables
-func setupEnv() {
-	// Set the environment variables
-	os.Setenv("GOOGLE_CLOUD_PROJECT_ID", "softion-playground")
-	os.Setenv("GOOGLE_CLOUD_FIRESTORE_DATABASE_ID", "blogdb-yanu-widodo")
-	os.Setenv("GOOGLE_CLOUD_FIRESTORE_COLLECTION_USERS", "users")
-}
-
-// setupFirestoreDB creates a Firestore client for testing.
-func setupFirestoreDB(t *testing.T) *firestore.Client {
-	setupEnv()
-	firestoreDB := database.NewFirestore(os.Getenv("GOOGLE_CLOUD_PROJECT_ID"),
-		os.Getenv("GOOGLE_CLOUD_FIRESTORE_DATABASE_ID"))
-	if err := firestoreDB.Connect(context.Background()); err != nil {
-		t.Fatalf("Failed to connect to Firestore: %v", err)
-	}
-	return firestoreDB.Client()
-}
 
 // cleanupFirestore deletes all documents in the given collection.
 func cleanupFirestore(t *testing.T, client *firestore.Client, collection string) {
@@ -46,7 +27,7 @@ func cleanupFirestore(t *testing.T, client *firestore.Client, collection string)
 }
 
 func TestCreateUser(t *testing.T) {
-	db := setupFirestoreDB(t)
+	db := helper.SetupRepoClient(t)
 	defer db.Close()
 
 	repo := NewFirestoreUserRepository(db)
@@ -78,7 +59,7 @@ func TestCreateUser(t *testing.T) {
 }
 
 func TestGetByUsernameAndPassword(t *testing.T) {
-	client := setupFirestoreDB(t)
+	client := helper.SetupRepoClient(t)
 	defer client.Close()
 
 	// Set the collection name for testing
@@ -108,7 +89,7 @@ func TestGetByUsernameAndPassword(t *testing.T) {
 }
 
 func TestIsUsernameExists(t *testing.T) {
-	client := setupFirestoreDB(t)
+	client := helper.SetupRepoClient(t)
 	defer client.Close()
 
 	// Set the collection name for testing

@@ -17,7 +17,7 @@ func setupEnv() {
 	os.Setenv("GOOGLE_CLOUD_FIRESTORE_COLLECTION_POSTS", "posts")
 }
 
-func SetupFirestoreDB(t *testing.T) *firestore.Client {
+func SetupFirestoreDB(t *testing.T) (*firestore.Client, error) {
 	setupEnv()
 	firestoreDB := database.NewFirestore(os.Getenv("GOOGLE_CLOUD_PROJECT_ID"),
 		os.Getenv("GOOGLE_CLOUD_FIRESTORE_DATABASE_ID"))
@@ -32,7 +32,10 @@ func CleanDatabase() error {
 	SetTestEnv()
 	db := database.NewFirestore("softion-playground", "blogdb-yanu-widodo")
 	db.Connect(ctx)
-	client := db.Client()
+	client, err := db.Client()
+	if err != nil {
+		return fmt.Errorf("failed to get firestore client: %v", err)
+	}
 	collections := []string{"users", "posts", "comments", "likes"}
 	for _, col := range collections {
 		docs, err := client.Collection(col).Documents(ctx).GetAll()

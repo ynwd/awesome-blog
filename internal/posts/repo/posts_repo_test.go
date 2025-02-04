@@ -11,7 +11,7 @@ import (
 )
 
 func TestPostsFirestore_Create(t *testing.T) {
-	client := helper.SetupFirestoreDB(t)
+	client := helper.SetupRepoClient(t)
 	defer client.Close()
 
 	repo := NewPostsRepository(client)
@@ -66,7 +66,7 @@ func TestPostsFirestore_Create(t *testing.T) {
 }
 
 func TestPostsFirestore_GetAll(t *testing.T) {
-	client := helper.SetupFirestoreDB(t)
+	client := helper.SetupRepoClient(t)
 	defer client.Close()
 
 	repo := NewPostsRepository(client)
