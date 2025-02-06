@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/pubsub"
+	"google.golang.org/api/option"
 )
 
 type PubSubClient interface {
@@ -23,7 +24,8 @@ type pubSubClient struct {
 
 func NewPubSubClient(projectID, topicID string) (PubSubClient, error) {
 	ctx := context.Background()
-	client, err := pubsub.NewClient(ctx, projectID)
+	opt := option.WithCredentialsFile("serviceAccountKey.json")
+	client, err := pubsub.NewClient(ctx, projectID, opt)
 	if err != nil {
 		return nil, err
 	}
