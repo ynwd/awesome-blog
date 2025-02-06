@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/firestore"
+	"google.golang.org/api/option"
 )
 
 // FirestoreDB is a struct that holds the firestore client
@@ -24,10 +25,13 @@ func NewFirestore(projectID, databaseID string) *FirestoreDB {
 
 // Connect creates a new firestore client and assigns it to the FirestoreDB struct
 func (db *FirestoreDB) Connect(ctx context.Context) error {
+	opt := option.WithCredentialsFile("serviceAccountKey.json")
+
 	client, err := firestore.NewClientWithDatabase(
 		ctx,
 		db.ProjectID,
 		db.DatabaseID,
+		opt,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create firestore client: %w", err)
