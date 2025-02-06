@@ -83,3 +83,10 @@ go test -v ./internal/summary/...
 | `/tests` | Integration & E2E tests |
 | `  /tests/e2e` | End-to-end tests |
 | `  /tests/helper` | Test helpers |
+
+## Problems Fix 
+ if you get this error "Failed to connect to Firestore: failed to create firestore client: credentials: could not find default credentials. See https://cloud.google.com/docs/authentication/external/set-up-adc for more information"
+ 
+ please watch   How to Get Firebase Service Account JSON File ->  https://www.youtube.com/watch?v=1ABYkh5xb5M 
+
+ 
