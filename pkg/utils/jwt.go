@@ -33,10 +33,14 @@ type jwtToken struct {
 	secret string
 }
 
-func NewJWT() JWT {
-	return &jwtToken{
-		secret: os.Getenv("JWT_SECRET"),
+func NewJWT() (JWT, error) {
+	secret := os.Getenv("JWT_SECRET")
+	if len(secret) < 32 {
+		return nil, errors.New("jwt secret must be at least 32 characters")
 	}
+	return &jwtToken{
+		secret: secret,
+	}, nil
 }
 
 func (t *jwtToken) GenerateToken(username string, ip string) (string, error) {
@@ -63,10 +67,17 @@ func (t *jwtToken) ValidateToken(tokenString string, currentIP string) (*jwt.Tok
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
 		return []byte(t.secret), nil
-	})
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Name}))
 
 	if err != nil {
-		return nil, err
+		switch {
+		case errors.Is(err, jwt.ErrTokenExpired):
+			return nil, ErrExpiredToken
+		case errors.Is(err, jwt.ErrTokenNotValidYet):
+			return nil, ErrTokenUsedBeforeIssued
+		default:
+			return nil, ErrInvalidToken
+		}
 	}
 
 	claims, ok := token.Claims.(*Claims)
