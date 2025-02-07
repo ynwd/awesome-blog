@@ -24,7 +24,11 @@ func NewModule(firestoreClient *firestore.Client) *Module {
 	userService := service.NewUserService(userRepo)
 
 	// Initialize handler with service
-	jwt := utils.NewJWT()
+	jwt, err := utils.NewJWT()
+	if err != nil {
+		panic(err)
+	}
+
 	userHandler := handler.NewUserHandler(userService, jwt)
 
 	return &Module{
