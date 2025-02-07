@@ -153,6 +153,11 @@ func TestInvalidTokenFormat(t *testing.T) {
 	_, err = jwt.ValidateToken("invalid-token-format", "192.168.1.1")
 	assert.Error(t, err)
 	assert.Equal(t, ErrInvalidToken, err)
+
+	// Test with invalid token string
+	_, err = jwt.ValidateToken("invalid.token.format", "192.168.1.1")
+	assert.Error(t, err)
+	assert.Equal(t, ErrInvalidToken, err)
 }
 
 func TestInvalidSigningMethod(t *testing.T) {
@@ -277,4 +282,140 @@ func TestTokenWithRole(t *testing.T) {
 	validatedClaims, err := jwt.GetClaims(validatedToken)
 	assert.NoError(t, err)
 	assert.Equal(t, "admin", validatedClaims.Role)
+}
+
+func TestNewJWTWithInvalidSecret(t *testing.T) {
+	// Test with short secret
+	os.Setenv("JWT_SECRET", "short")
+	defer os.Unsetenv("JWT_SECRET")
+
+	jwt, err := NewJWT()
+	assert.Error(t, err)
+	assert.Nil(t, jwt)
+	assert.Contains(t, err.Error(), "jwt secret must be at least 32 characters")
+}
+
+func TestGenerateTokenWithRole(t *testing.T) {
+	// Setup
+	os.Setenv("JWT_SECRET", "this-is-a-valid-secret-key-with-32-chars")
+	defer os.Unsetenv("JWT_SECRET")
+
+	jwt := &jwtToken{
+		secret: "this-is-a-valid-secret-key-with-32-chars",
+	}
+
+	// Create claims with role
+	now := time.Now()
+	claims := &Claims{
+		RegisteredClaims: jwt5.RegisteredClaims{
+			ExpiresAt: jwt5.NewNumericDate(now.Add(time.Hour)),
+			IssuedAt:  jwt5.NewNumericDate(now),
+			NotBefore: jwt5.NewNumericDate(now),
+			Subject:   "testuser",
+			Issuer:    "awesome-blog",
+		},
+		IP:       "192.168.1.1",
+		Username: "testuser",
+		Role:     "admin",
+	}
+
+	token := jwt5.NewWithClaims(jwt5.SigningMethodHS256, claims)
+	tokenString, err := token.SignedString([]byte(jwt.secret))
+	assert.NoError(t, err)
+
+	// Validate token and check role
+	validatedToken, err := jwt.ValidateToken(tokenString, "192.168.1.1")
+	assert.NoError(t, err)
+
+	validatedClaims, err := jwt.GetClaims(validatedToken)
+	assert.NoError(t, err)
+	assert.Equal(t, "admin", validatedClaims.Role)
+	assert.Equal(t, "testuser", validatedClaims.Username)
+	assert.Equal(t, "192.168.1.1", validatedClaims.IP)
+}
+
+func TestValidateTokenWithMissingIP(t *testing.T) {
+	// Setup
+	os.Setenv("JWT_SECRET", "this-is-a-valid-secret-key-with-32-chars")
+	defer os.Unsetenv("JWT_SECRET")
+
+	jwt := &jwtToken{
+		secret: "this-is-a-valid-secret-key-with-32-chars",
+	}
+
+	// Generate token
+	token, err := jwt.GenerateToken("testuser", "192.168.1.1")
+	assert.NoError(t, err)
+
+	// Validate with wrong IP
+	_, err = jwt.ValidateToken(token, "192.168.1.2")
+	assert.Error(t, err)
+	assert.Equal(t, ErrInvalidIP, err)
+}
+
+func TestTokenTimeValidation(t *testing.T) {
+	// Setup
+	os.Setenv("JWT_SECRET", "this-is-a-valid-secret-key-with-32-chars")
+	defer os.Unsetenv("JWT_SECRET")
+
+	jwt := &jwtToken{
+		secret: "this-is-a-valid-secret-key-with-32-chars",
+	}
+
+	tests := []struct {
+		name      string
+		issuedAt  time.Time
+		expiresAt time.Time
+		wantErr   error
+	}{
+		{
+			name:      "Future IssuedAt",
+			issuedAt:  time.Now().Add(1 * time.Hour),
+			expiresAt: time.Now().Add(2 * time.Hour),
+			wantErr:   ErrTokenUsedBeforeIssued,
+		},
+		{
+			name:      "Past ExpiresAt",
+			issuedAt:  time.Now().Add(-2 * time.Hour),
+			expiresAt: time.Now().Add(-1 * time.Hour),
+			wantErr:   ErrExpiredToken,
+		},
+		{
+			name:      "Valid Time Window",
+			issuedAt:  time.Now().Add(-1 * time.Hour),
+			expiresAt: time.Now().Add(1 * time.Hour),
+			wantErr:   nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create claims with test times
+			claims := &Claims{
+				RegisteredClaims: jwt5.RegisteredClaims{
+					ExpiresAt: jwt5.NewNumericDate(tt.expiresAt),
+					IssuedAt:  jwt5.NewNumericDate(tt.issuedAt),
+					NotBefore: jwt5.NewNumericDate(tt.issuedAt),
+					Subject:   "testuser",
+					Issuer:    "awesome-blog",
+				},
+				IP:       "192.168.1.1",
+				Username: "testuser",
+			}
+
+			// Generate token
+			token := jwt5.NewWithClaims(jwt5.SigningMethodHS256, claims)
+			tokenString, err := token.SignedString([]byte(jwt.secret))
+			assert.NoError(t, err)
+
+			// Validate token
+			_, err = jwt.ValidateToken(tokenString, "192.168.1.1")
+			if tt.wantErr != nil {
+				assert.Error(t, err)
+				assert.Equal(t, tt.wantErr, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }
