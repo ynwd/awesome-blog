@@ -12,7 +12,7 @@ import (
 )
 
 func setupEnv() {
-	os.Setenv("GOOGLE_CLOUD_PROJECT_ID", "softion-playground")
+	os.Setenv("GOOGLE_CLOUD_PROJECT_ID", "replix-394315")
 	os.Setenv("GOOGLE_CLOUD_FIRESTORE_DATABASE_ID", "blogdb-yanu-widodo")
 	os.Setenv("GOOGLE_CLOUD_FIRESTORE_COLLECTION_POSTS", "posts")
 }
@@ -30,7 +30,7 @@ func SetupFirestoreDB(t *testing.T) (*firestore.Client, error) {
 func CleanDatabase() error {
 	ctx := context.Background()
 	SetTestEnv()
-	db := database.NewFirestore("softion-playground", "blogdb-yanu-widodo")
+	db := database.NewFirestore(os.Getenv("GOOGLE_CLOUD_PROJECT_ID"), os.Getenv("GOOGLE_CLOUD_FIRESTORE_DATABASE_ID"))
 	db.Connect(ctx)
 	client, err := db.Client()
 	if err != nil {

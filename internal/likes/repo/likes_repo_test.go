@@ -13,7 +13,10 @@ import (
 func TestLikesRepository_Create(t *testing.T) {
 	ctx := context.Background()
 	client := helper.SetupRepoClient(t)
-	defer client.Close()
+	defer func() {
+		helper.CleanDatabase()
+		client.Close()
+	}()
 
 	// Cleanup before test
 	err := helper.CleanDatabase()

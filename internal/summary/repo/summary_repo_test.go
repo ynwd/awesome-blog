@@ -18,6 +18,16 @@ func createTestData(ctx context.Context, client *firestore.Client, testDate time
 		data       map[string]interface{}
 	}{
 		{
+			collection: "posts",
+			id:         "post1",
+			data: map[string]interface{}{
+				"username":    "testuser",
+				"created_at":  testDate,
+				"description": "Description 1",
+				"title":       "Title 1",
+			},
+		},
+		{
 			collection: "likes",
 			id:         "like1",
 			data: map[string]interface{}{
@@ -35,14 +45,6 @@ func createTestData(ctx context.Context, client *firestore.Client, testDate time
 				"created_at": testDate,
 			},
 		},
-		{
-			collection: "posts",
-			id:         "post1",
-			data: map[string]interface{}{
-				"username":   "testuser",
-				"created_at": testDate,
-			},
-		},
 	}
 
 	for _, td := range testData {
@@ -57,13 +59,19 @@ func createTestData(ctx context.Context, client *firestore.Client, testDate time
 func TestSummaryRepository_GetUserSummary(t *testing.T) {
 	ctx := context.Background()
 	client := helper.SetupRepoClient(t)
+
+	// Clean before and after test
 	err := helper.CleanDatabase()
 	assert.NoError(t, err)
 	defer func() {
 		helper.CleanDatabase()
+		client.Close()
 	}()
 
+	// Use fixed date for testing
 	testDate := time.Date(2025, 2, 1, 0, 0, 0, 0, time.UTC)
+
+	// Setup test data
 	err = createTestData(ctx, client, testDate)
 	assert.NoError(t, err)
 
@@ -80,8 +88,8 @@ func TestSummaryRepository_GetUserSummary(t *testing.T) {
 		{
 			name:      "get summary for existing user",
 			username:  "testuser",
-			startDate: testDate.AddDate(0, 0, -1),
-			endDate:   testDate.AddDate(0, 0, 1),
+			startDate: testDate.AddDate(0, 0, -1), // day before
+			endDate:   testDate.AddDate(0, 0, 1),  // day after
 			want: &domain.SummaryData{
 				Likes:    map[string]int64{"2025-02": 1},
 				Comments: map[string]int64{"2025-02": 1},
@@ -92,8 +100,20 @@ func TestSummaryRepository_GetUserSummary(t *testing.T) {
 		{
 			name:      "get summary for non-existing user",
 			username:  "nonexistent",
-			startDate: time.Now().AddDate(0, 0, -7),
-			endDate:   time.Now().AddDate(0, 0, 1),
+			startDate: testDate.AddDate(0, 0, -1),
+			endDate:   testDate.AddDate(0, 0, 1),
+			want: &domain.SummaryData{
+				Likes:    map[string]int64{},
+				Comments: map[string]int64{},
+				Posts:    map[string]int64{},
+			},
+			wantErr: false,
+		},
+		{
+			name:      "get summary with no data in range",
+			username:  "testuser",
+			startDate: testDate.AddDate(0, -1, 0), // month before
+			endDate:   testDate.AddDate(0, -1, 1),
 			want: &domain.SummaryData{
 				Likes:    map[string]int64{},
 				Comments: map[string]int64{},

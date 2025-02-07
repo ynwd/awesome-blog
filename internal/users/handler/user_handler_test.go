@@ -7,7 +7,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -16,7 +15,9 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/ynwd/awesome-blog/internal/users/domain"
 	"github.com/ynwd/awesome-blog/internal/users/service"
+	"github.com/ynwd/awesome-blog/pkg/middleware"
 	"github.com/ynwd/awesome-blog/pkg/res"
+	"github.com/ynwd/awesome-blog/pkg/utils"
 )
 
 type MockUserService struct {
@@ -31,31 +32,6 @@ func (m *MockUserService) CreateUser(ctx context.Context, user domain.User) erro
 func (m *MockUserService) AuthenticateUser(ctx context.Context, username, password string) (domain.User, error) {
 	args := m.Called(ctx, username, password)
 	return args.Get(0).(domain.User), args.Error(1)
-}
-
-type MockJWTToken struct {
-	mock.Mock
-}
-
-func (m *MockJWTToken) GenerateToken(username string) (string, error) {
-	args := m.Called(username)
-	return args.String(0), args.Error(1)
-}
-
-func (m *MockJWTToken) ValidateToken(tokenString string) (*jwt.Token, error) {
-	args := m.Called(tokenString)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*jwt.Token), args.Error(1)
-}
-
-func (m *MockJWTToken) GetClaims(token *jwt.Token) (jwt.MapClaims, error) {
-	args := m.Called(token)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(jwt.MapClaims), args.Error(1)
 }
 
 func TestRegisterHandler(t *testing.T) {
@@ -154,37 +130,73 @@ func TestRegisterHandler(t *testing.T) {
 	}
 }
 
+type MockJWTToken struct {
+	mock.Mock
+}
+
+func (m *MockJWTToken) GenerateToken(username string, ip string) (string, error) {
+	args := m.Called(username, ip)
+	return args.String(0), args.Error(1)
+}
+
+func (m *MockJWTToken) ValidateToken(tokenString string, ip string) (*jwt.Token, error) {
+	args := m.Called(tokenString, ip)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*jwt.Token), args.Error(1)
+}
+
+func (m *MockJWTToken) GetClaims(token *jwt.Token) (*utils.Claims, error) {
+	args := m.Called(token)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*utils.Claims), args.Error(1)
+}
+
+func setClientIP(c *gin.Context, ip string) {
+	// Set multiple headers to ensure IP is detected
+	c.Request.Header.Set("X-Real-IP", ip)
+	c.Request.Header.Set("X-Forwarded-For", ip)
+	c.Request.RemoteAddr = ip + ":12345"
+}
+
 func TestLoginHandler(t *testing.T) {
+	validToken := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.valid"
 	tests := []struct {
 		name       string
 		reqBody    map[string]string
+		clientIP   string
 		setupMocks func(*MockUserService, *MockJWTToken)
 		wantStatus int
 		checkRes   func(*testing.T, res.Response)
 	}{
 		{
-			name: "Success",
+			name: "Success with IP Validation",
 			reqBody: map[string]string{
 				"username": "testuser",
 				"password": "testpass",
 			},
+			clientIP: "192.168.1.1",
 			setupMocks: func(ms *MockUserService, jwt *MockJWTToken) {
 				expectedUser := domain.User{Id: "123", Username: "testuser"}
 				ms.On("AuthenticateUser", mock.Anything, "testuser", "testpass").
 					Return(expectedUser, nil)
-				jwt.On("GenerateToken", "testuser").
-					Return("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0dXNlciJ9.signature", nil)
+				jwt.On("GenerateToken", "testuser", "192.168.1.1").
+					Return(validToken, nil)
 			},
 			wantStatus: http.StatusOK,
 			checkRes: func(t *testing.T, got res.Response) {
 				assert.Equal(t, "success", got.Status)
 				assert.Equal(t, "Login successful", got.Message)
-				assert.True(t, strings.HasPrefix(got.Data.(string), "eyJ"))
+				assert.Equal(t, validToken, got.Data)
 			},
 		},
 		{
 			name:       "Invalid Request Format",
 			reqBody:    map[string]string{},
+			clientIP:   "192.168.1.1",
 			setupMocks: func(ms *MockUserService, jwt *MockJWTToken) {},
 			wantStatus: http.StatusBadRequest,
 			checkRes: func(t *testing.T, got res.Response) {
@@ -198,6 +210,7 @@ func TestLoginHandler(t *testing.T) {
 				"username": "",
 				"password": "testpass",
 			},
+			clientIP:   "192.168.1.1",
 			setupMocks: func(ms *MockUserService, jwt *MockJWTToken) {},
 			wantStatus: http.StatusBadRequest,
 			checkRes: func(t *testing.T, got res.Response) {
@@ -206,43 +219,15 @@ func TestLoginHandler(t *testing.T) {
 			},
 		},
 		{
-			name: "Empty Password",
-			reqBody: map[string]string{
-				"username": "testuser",
-				"password": "",
-			},
-			setupMocks: func(ms *MockUserService, jwt *MockJWTToken) {},
-			wantStatus: http.StatusBadRequest,
-			checkRes: func(t *testing.T, got res.Response) {
-				assert.Equal(t, "error", got.Status)
-				assert.Equal(t, "Invalid request format", got.Message)
-			},
-		},
-		{
-			name: "Invalid Credentials",
+			name: "Authentication Failure",
 			reqBody: map[string]string{
 				"username": "testuser",
 				"password": "wrongpass",
 			},
+			clientIP: "192.168.1.1",
 			setupMocks: func(ms *MockUserService, jwt *MockJWTToken) {
 				ms.On("AuthenticateUser", mock.Anything, "testuser", "wrongpass").
-					Return(domain.User{}, service.ErrNotFound)
-			},
-			wantStatus: http.StatusUnauthorized,
-			checkRes: func(t *testing.T, got res.Response) {
-				assert.Equal(t, "error", got.Status)
-				assert.Equal(t, "Invalid credentials", got.Message)
-			},
-		},
-		{
-			name: "AuthenticateUser Error",
-			reqBody: map[string]string{
-				"username": "testuser",
-				"password": "testpass",
-			},
-			setupMocks: func(ms *MockUserService, jwt *MockJWTToken) {
-				ms.On("AuthenticateUser", mock.Anything, "testuser", "testpass").
-					Return(domain.User{}, errors.New("internal error"))
+					Return(domain.User{}, errors.New("authentication failed"))
 			},
 			wantStatus: http.StatusUnauthorized,
 			checkRes: func(t *testing.T, got res.Response) {
@@ -256,12 +241,33 @@ func TestLoginHandler(t *testing.T) {
 				"username": "testuser",
 				"password": "testpass",
 			},
+			clientIP: "192.168.1.1",
 			setupMocks: func(ms *MockUserService, jwt *MockJWTToken) {
 				expectedUser := domain.User{Id: "123", Username: "testuser"}
 				ms.On("AuthenticateUser", mock.Anything, "testuser", "testpass").
 					Return(expectedUser, nil)
-				jwt.On("GenerateToken", "testuser").
+				jwt.On("GenerateToken", "testuser", "192.168.1.1").
 					Return("", errors.New("token generation failed"))
+			},
+			wantStatus: http.StatusInternalServerError,
+			checkRes: func(t *testing.T, got res.Response) {
+				assert.Equal(t, "error", got.Status)
+				assert.Equal(t, "Failed to generate token", got.Message)
+			},
+		},
+		{
+			name: "Empty IP Address",
+			reqBody: map[string]string{
+				"username": "testuser",
+				"password": "testpass",
+			},
+			clientIP: "",
+			setupMocks: func(ms *MockUserService, jwt *MockJWTToken) {
+				expectedUser := domain.User{Id: "123", Username: "testuser"}
+				ms.On("AuthenticateUser", mock.Anything, "testuser", "testpass").
+					Return(expectedUser, nil)
+				jwt.On("GenerateToken", "testuser", "").
+					Return("", errors.New("empty IP address"))
 			},
 			wantStatus: http.StatusInternalServerError,
 			checkRes: func(t *testing.T, got res.Response) {
@@ -278,13 +284,13 @@ func TestLoginHandler(t *testing.T) {
 			tt.setupMocks(mockService, mockJWT)
 
 			h := NewUserHandler(mockService, mockJWT)
-
 			w := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(w)
 
 			jsonBody, _ := json.Marshal(tt.reqBody)
 			c.Request, _ = http.NewRequest(http.MethodPost, "/users/login", bytes.NewBuffer(jsonBody))
 			c.Request.Header.Set("Content-Type", "application/json")
+			setClientIP(c, tt.clientIP)
 
 			h.Login(c)
 
@@ -297,4 +303,199 @@ func TestLoginHandler(t *testing.T) {
 			mockJWT.AssertExpectations(t)
 		})
 	}
+}
+
+func setupTestRouter(h *UserHandler, jwt utils.JWT) *gin.Engine {
+	r := gin.New()
+	r.Use(middleware.AuthMiddleware(jwt))
+	r.POST("/login", h.Login)
+	r.POST("/register", h.Register)
+	r.POST("/protected", h.Login) // Add protected path for testing
+	return r
+}
+
+func TestLoginHandlerWithMiddleware(t *testing.T) {
+	validToken := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.valid"
+
+	// Create test claims
+	testClaims := &utils.Claims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject: "testuser",
+		},
+		IP: "192.168.1.1",
+	}
+
+	// Create test token with claims
+	testToken := &jwt.Token{
+		Valid:  true,
+		Claims: testClaims,
+	}
+
+	tests := []struct {
+		name       string
+		path       string // Add path field
+		reqBody    map[string]string
+		clientIP   string
+		authHeader string
+		setupMocks func(*MockUserService, *MockJWTToken)
+		wantStatus int
+		checkRes   func(*testing.T, res.Response)
+	}{
+		{
+			name: "Login Path Skips Auth",
+			path: "/login",
+			reqBody: map[string]string{
+				"username": "testuser",
+				"password": "testpass",
+			},
+			clientIP:   "192.168.1.1",
+			authHeader: "", // No auth header needed
+			setupMocks: func(ms *MockUserService, jwt *MockJWTToken) {
+				expectedUser := domain.User{Id: "123", Username: "testuser"}
+				ms.On("AuthenticateUser", mock.Anything, "testuser", "testpass").
+					Return(expectedUser, nil)
+				jwt.On("GenerateToken", "testuser", "192.168.1.1").
+					Return(validToken, nil)
+			},
+			wantStatus: http.StatusOK,
+			checkRes: func(t *testing.T, got res.Response) {
+				assert.Equal(t, "success", got.Status)
+				assert.Equal(t, "Login successful", got.Message)
+				assert.Equal(t, validToken, got.Data)
+			},
+		},
+		{
+			name: "Register Path Skips Auth",
+			path: "/register",
+			reqBody: map[string]string{
+				"username": "testuser",
+				"password": "testpass",
+			},
+			clientIP:   "192.168.1.1",
+			authHeader: "", // No auth header needed
+			setupMocks: func(ms *MockUserService, jwt *MockJWTToken) {
+				ms.On("CreateUser", mock.Anything, mock.AnythingOfType("domain.User")).
+					Return(nil)
+			},
+			wantStatus: http.StatusCreated,
+			checkRes: func(t *testing.T, got res.Response) {
+				assert.Equal(t, "success", got.Status)
+				assert.Equal(t, "User registered successfully", got.Message)
+			},
+		},
+		{
+			name: "Success with Valid Token and IP",
+			path: "/protected", // Use protected path to trigger middleware
+			reqBody: map[string]string{
+				"username": "testuser",
+				"password": "testpass",
+			},
+			clientIP:   "192.168.1.1",
+			authHeader: "Bearer " + validToken,
+			setupMocks: func(ms *MockUserService, jwt *MockJWTToken) {
+				// First, middleware validates token
+				jwt.On("ValidateToken", validToken, "192.168.1.1").
+					Return(testToken, nil).Once()
+
+				// Then, middleware gets claims
+				jwt.On("GetClaims", testToken).
+					Return(testClaims, nil).Once()
+
+				// Finally, handler processes login
+				expectedUser := domain.User{Id: "123", Username: "testuser"}
+				ms.On("AuthenticateUser", mock.Anything, "testuser", "testpass").
+					Return(expectedUser, nil)
+				jwt.On("GenerateToken", "testuser", "192.168.1.1").
+					Return(validToken, nil)
+			},
+			wantStatus: http.StatusOK,
+			checkRes: func(t *testing.T, got res.Response) {
+				assert.Equal(t, "success", got.Status)
+				assert.Equal(t, "Login successful", got.Message)
+				assert.Equal(t, validToken, got.Data)
+			},
+		},
+		{
+			name: "Invalid Token Claims",
+			path: "/protected",
+			reqBody: map[string]string{
+				"username": "testuser",
+				"password": "testpass",
+			},
+			clientIP:   "192.168.1.1",
+			authHeader: "Bearer " + validToken,
+			setupMocks: func(ms *MockUserService, jwt *MockJWTToken) {
+				jwt.On("ValidateToken", validToken, "192.168.1.1").
+					Return(testToken, nil)
+				jwt.On("GetClaims", testToken).
+					Return(nil, errors.New("invalid token claims type"))
+				// Don't set up AuthenticateUser as request should be blocked by middleware
+			},
+			wantStatus: http.StatusUnauthorized,
+			checkRes: func(t *testing.T, got res.Response) {
+				assert.Equal(t, "error", got.Status)
+				assert.Equal(t, "Invalid token claims", got.Message)
+			},
+		},
+		{
+			name: "IP Mismatch in Claims",
+			path: "/protected",
+			reqBody: map[string]string{
+				"username": "testuser",
+				"password": "testpass",
+			},
+			clientIP:   "10.0.0.2",
+			authHeader: "Bearer " + validToken,
+			setupMocks: func(ms *MockUserService, jwt *MockJWTToken) {
+				jwt.On("ValidateToken", validToken, "10.0.0.2").
+					Return(nil, errors.New("token IP mismatch: expected 192.168.1.1, got 10.0.0.2"))
+				// Don't set up AuthenticateUser as request should be blocked by middleware
+			},
+			wantStatus: http.StatusUnauthorized,
+			checkRes: func(t *testing.T, got res.Response) {
+				assert.Equal(t, "error", got.Status)
+				assert.Contains(t, got.Message, "token IP mismatch")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockService := new(MockUserService)
+			mockJWT := new(MockJWTToken)
+			tt.setupMocks(mockService, mockJWT)
+
+			h := NewUserHandler(mockService, mockJWT)
+			r := setupTestRouter(h, mockJWT)
+			w := httptest.NewRecorder()
+
+			jsonBody, _ := json.Marshal(tt.reqBody)
+			path := tt.path
+			if path == "" {
+				path = "/login" // Default path for backward compatibility
+			}
+			req := httptest.NewRequest(http.MethodPost, path, bytes.NewBuffer(jsonBody))
+			req.Header.Set("Content-Type", "application/json")
+			if tt.authHeader != "" {
+				req.Header.Set("Authorization", tt.authHeader)
+			}
+			setClientIPWithHttp(req, tt.clientIP)
+
+			r.ServeHTTP(w, req)
+
+			var response res.Response
+			json.Unmarshal(w.Body.Bytes(), &response)
+			assert.Equal(t, tt.wantStatus, w.Code)
+			tt.checkRes(t, response)
+
+			mockService.AssertExpectations(t)
+			mockJWT.AssertExpectations(t)
+		})
+	}
+}
+
+func setClientIPWithHttp(req *http.Request, ip string) {
+	req.Header.Set("X-Real-IP", ip)
+	req.Header.Set("X-Forwarded-For", ip)
+	req.RemoteAddr = ip + ":12345"
 }

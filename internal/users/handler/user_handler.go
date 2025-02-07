@@ -71,7 +71,11 @@ func (h *UserHandler) Login(c *gin.Context) {
 		return
 	}
 
-	token, err := h.jwtToken.GenerateToken(user.Username)
+	// Get client IP
+	clientIP := c.ClientIP()
+
+	// Generate token with IP
+	token, err := h.jwtToken.GenerateToken(user.Username, clientIP)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, res.Response{
 			Status:  "error",
