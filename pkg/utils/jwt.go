@@ -10,17 +10,21 @@ import (
 )
 
 var (
-	ErrInvalidToken = errors.New("invalid token")
-	ErrExpiredToken = errors.New("token has expired")
+	ErrInvalidToken          = errors.New("invalid token")
+	ErrExpiredToken          = errors.New("token has expired")
+	ErrInvalidIP             = errors.New("invalid IP address")
+	ErrTokenUsedBeforeIssued = errors.New("token used before issued")
 )
 
 type Claims struct {
 	jwt.RegisteredClaims
-	IP string `json:"ip"`
+	IP       string `json:"ip"`
+	Username string `json:"username"`
+	Role     string `json:"role,omitempty"`
 }
 
 type JWT interface {
-	GenerateToken(sub string, ip string) (string, error)
+	GenerateToken(username string, ip string) (string, error)
 	ValidateToken(tokenString string, ip string) (*jwt.Token, error)
 	GetClaims(token *jwt.Token) (*Claims, error)
 }
@@ -35,14 +39,18 @@ func NewJWT() JWT {
 	}
 }
 
-func (t *jwtToken) GenerateToken(sub string, ip string) (string, error) {
+func (t *jwtToken) GenerateToken(username string, ip string) (string, error) {
+	now := time.Now()
 	claims := &Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			Subject:   sub,
+			ExpiresAt: jwt.NewNumericDate(now.Add(24 * time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now),
+			Subject:   username,
+			Issuer:    "awesome-blog",
 		},
-		IP: ip,
+		IP:       ip,
+		Username: username,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -61,19 +69,34 @@ func (t *jwtToken) ValidateToken(tokenString string, currentIP string) (*jwt.Tok
 		return nil, err
 	}
 
-	if claims, ok := token.Claims.(*Claims); ok && token.Valid {
-		if claims.IP != currentIP {
-			return nil, fmt.Errorf("token IP mismatch: expected %s, got %s", claims.IP, currentIP)
-		}
-		return token, nil
+	claims, ok := token.Claims.(*Claims)
+	if !ok || !token.Valid {
+		return nil, ErrInvalidToken
 	}
 
-	return nil, fmt.Errorf("invalid token claims")
+	// Validate IP
+	if claims.IP != currentIP {
+		return nil, ErrInvalidIP
+	}
+
+	// Check if token is used before it was issued
+	now := time.Now()
+	if claims.IssuedAt != nil && claims.IssuedAt.After(now) {
+		return nil, ErrTokenUsedBeforeIssued
+	}
+
+	// Check expiration
+	if claims.ExpiresAt != nil && claims.ExpiresAt.Before(now) {
+		return nil, ErrExpiredToken
+	}
+
+	return token, nil
 }
 
 func (t *jwtToken) GetClaims(token *jwt.Token) (*Claims, error) {
-	if claims, ok := token.Claims.(*Claims); ok {
-		return claims, nil
+	claims, ok := token.Claims.(*Claims)
+	if !ok {
+		return nil, ErrInvalidToken
 	}
-	return nil, fmt.Errorf("invalid token claims type")
+	return claims, nil
 }

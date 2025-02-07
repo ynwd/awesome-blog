@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/firestore"
+	"github.com/stretchr/testify/assert"
 	"github.com/ynwd/awesome-blog/internal/comments/domain"
 	postDomain "github.com/ynwd/awesome-blog/internal/posts/domain"
 	postRepo "github.com/ynwd/awesome-blog/internal/posts/repo"
@@ -50,7 +51,14 @@ func setupUsersAndPosts(t *testing.T, client *firestore.Client) {
 func TestCommentsRepository_Create(t *testing.T) {
 	client := helper.SetupRepoClient(t)
 	setupUsersAndPosts(t, client)
-	defer client.Close()
+
+	err := helper.CleanDatabase()
+	assert.NoError(t, err)
+
+	defer func() {
+		helper.CleanDatabase()
+		client.Close()
+	}()
 
 	repo := NewCommentsRepository(client)
 
@@ -83,7 +91,6 @@ func TestCommentsRepository_Create(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			defer helper.CleanDatabase()
 
 			ctx := context.Background()
 			err := repo.Create(ctx, tt.comment)

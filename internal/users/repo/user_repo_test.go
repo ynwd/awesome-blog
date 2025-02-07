@@ -20,8 +20,6 @@ func TestCreateUser(t *testing.T) {
 	err := helper.CleanDatabase()
 	assert.NoError(t, err)
 
-	defer helper.CleanDatabase()
-
 	// Test data
 	user := domain.User{
 		Username: "testuser",
@@ -50,14 +48,11 @@ func TestGetByUsernameAndPassword(t *testing.T) {
 
 	// Set the collection name for testing
 	os.Setenv("GOOGLE_CLOUD_FIRESTORE_COLLECTION_USERS", "users")
-
 	repo := NewFirestoreUserRepository(client)
 
 	// Clean up Firestore before and after the test
 	err := helper.CleanDatabase()
 	assert.NoError(t, err)
-
-	defer helper.CleanDatabase()
 
 	// Test data
 	user := domain.User{
@@ -88,8 +83,6 @@ func TestIsUsernameExists(t *testing.T) {
 	// Clean up Firestore before and after the test
 	err := helper.CleanDatabase()
 	assert.NoError(t, err)
-
-	defer helper.CleanDatabase()
 
 	// Test data
 	user := domain.User{

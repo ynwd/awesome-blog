@@ -12,7 +12,14 @@ import (
 
 func TestPostsFirestore_Create(t *testing.T) {
 	client := helper.SetupRepoClient(t)
-	defer client.Close()
+
+	err := helper.CleanDatabase()
+	assert.NoError(t, err)
+
+	defer func() {
+		helper.CleanDatabase()
+		client.Close()
+	}()
 
 	repo := NewPostsRepository(client)
 	ctx := context.Background()
@@ -57,21 +64,19 @@ func TestPostsFirestore_Create(t *testing.T) {
 			assert.Equal(t, tt.post.Title, savedPost.Title)
 			assert.Equal(t, tt.post.Description, savedPost.Description)
 			assert.NotZero(t, savedPost.CreatedAt)
-
-			// Cleanup
-			_, err = client.Collection("posts").Doc(gotID).Delete(ctx)
-			assert.NoError(t, err)
 		})
 	}
 }
 
 func TestPostsFirestore_GetAll(t *testing.T) {
 	client := helper.SetupRepoClient(t)
+
 	err := helper.CleanDatabase()
 	assert.NoError(t, err)
 
 	defer func() {
 		helper.CleanDatabase()
+		client.Close()
 	}()
 
 	repo := NewPostsRepository(client)

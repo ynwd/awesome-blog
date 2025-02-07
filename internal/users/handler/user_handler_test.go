@@ -309,6 +309,8 @@ func setupTestRouter(h *UserHandler, jwt utils.JWT) *gin.Engine {
 	r := gin.New()
 	r.Use(middleware.AuthMiddleware(jwt))
 	r.POST("/login", h.Login)
+	r.POST("/register", h.Register)
+	r.POST("/protected", h.Login) // Add protected path for testing
 	return r
 }
 
@@ -331,6 +333,7 @@ func TestLoginHandlerWithMiddleware(t *testing.T) {
 
 	tests := []struct {
 		name       string
+		path       string // Add path field
 		reqBody    map[string]string
 		clientIP   string
 		authHeader string
@@ -339,7 +342,50 @@ func TestLoginHandlerWithMiddleware(t *testing.T) {
 		checkRes   func(*testing.T, res.Response)
 	}{
 		{
+			name: "Login Path Skips Auth",
+			path: "/login",
+			reqBody: map[string]string{
+				"username": "testuser",
+				"password": "testpass",
+			},
+			clientIP:   "192.168.1.1",
+			authHeader: "", // No auth header needed
+			setupMocks: func(ms *MockUserService, jwt *MockJWTToken) {
+				expectedUser := domain.User{Id: "123", Username: "testuser"}
+				ms.On("AuthenticateUser", mock.Anything, "testuser", "testpass").
+					Return(expectedUser, nil)
+				jwt.On("GenerateToken", "testuser", "192.168.1.1").
+					Return(validToken, nil)
+			},
+			wantStatus: http.StatusOK,
+			checkRes: func(t *testing.T, got res.Response) {
+				assert.Equal(t, "success", got.Status)
+				assert.Equal(t, "Login successful", got.Message)
+				assert.Equal(t, validToken, got.Data)
+			},
+		},
+		{
+			name: "Register Path Skips Auth",
+			path: "/register",
+			reqBody: map[string]string{
+				"username": "testuser",
+				"password": "testpass",
+			},
+			clientIP:   "192.168.1.1",
+			authHeader: "", // No auth header needed
+			setupMocks: func(ms *MockUserService, jwt *MockJWTToken) {
+				ms.On("CreateUser", mock.Anything, mock.AnythingOfType("domain.User")).
+					Return(nil)
+			},
+			wantStatus: http.StatusCreated,
+			checkRes: func(t *testing.T, got res.Response) {
+				assert.Equal(t, "success", got.Status)
+				assert.Equal(t, "User registered successfully", got.Message)
+			},
+		},
+		{
 			name: "Success with Valid Token and IP",
+			path: "/protected", // Use protected path to trigger middleware
 			reqBody: map[string]string{
 				"username": "testuser",
 				"password": "testpass",
@@ -347,13 +393,18 @@ func TestLoginHandlerWithMiddleware(t *testing.T) {
 			clientIP:   "192.168.1.1",
 			authHeader: "Bearer " + validToken,
 			setupMocks: func(ms *MockUserService, jwt *MockJWTToken) {
+				// First, middleware validates token
+				jwt.On("ValidateToken", validToken, "192.168.1.1").
+					Return(testToken, nil).Once()
+
+				// Then, middleware gets claims
+				jwt.On("GetClaims", testToken).
+					Return(testClaims, nil).Once()
+
+				// Finally, handler processes login
 				expectedUser := domain.User{Id: "123", Username: "testuser"}
 				ms.On("AuthenticateUser", mock.Anything, "testuser", "testpass").
 					Return(expectedUser, nil)
-				jwt.On("ValidateToken", validToken, "192.168.1.1").
-					Return(testToken, nil)
-				jwt.On("GetClaims", testToken).
-					Return(testClaims, nil)
 				jwt.On("GenerateToken", "testuser", "192.168.1.1").
 					Return(validToken, nil)
 			},
@@ -366,6 +417,7 @@ func TestLoginHandlerWithMiddleware(t *testing.T) {
 		},
 		{
 			name: "Invalid Token Claims",
+			path: "/protected",
 			reqBody: map[string]string{
 				"username": "testuser",
 				"password": "testpass",
@@ -377,6 +429,7 @@ func TestLoginHandlerWithMiddleware(t *testing.T) {
 					Return(testToken, nil)
 				jwt.On("GetClaims", testToken).
 					Return(nil, errors.New("invalid token claims type"))
+				// Don't set up AuthenticateUser as request should be blocked by middleware
 			},
 			wantStatus: http.StatusUnauthorized,
 			checkRes: func(t *testing.T, got res.Response) {
@@ -386,6 +439,7 @@ func TestLoginHandlerWithMiddleware(t *testing.T) {
 		},
 		{
 			name: "IP Mismatch in Claims",
+			path: "/protected",
 			reqBody: map[string]string{
 				"username": "testuser",
 				"password": "testpass",
@@ -395,6 +449,7 @@ func TestLoginHandlerWithMiddleware(t *testing.T) {
 			setupMocks: func(ms *MockUserService, jwt *MockJWTToken) {
 				jwt.On("ValidateToken", validToken, "10.0.0.2").
 					Return(nil, errors.New("token IP mismatch: expected 192.168.1.1, got 10.0.0.2"))
+				// Don't set up AuthenticateUser as request should be blocked by middleware
 			},
 			wantStatus: http.StatusUnauthorized,
 			checkRes: func(t *testing.T, got res.Response) {
@@ -415,7 +470,11 @@ func TestLoginHandlerWithMiddleware(t *testing.T) {
 			w := httptest.NewRecorder()
 
 			jsonBody, _ := json.Marshal(tt.reqBody)
-			req := httptest.NewRequest(http.MethodPost, "/login", bytes.NewBuffer(jsonBody))
+			path := tt.path
+			if path == "" {
+				path = "/login" // Default path for backward compatibility
+			}
+			req := httptest.NewRequest(http.MethodPost, path, bytes.NewBuffer(jsonBody))
 			req.Header.Set("Content-Type", "application/json")
 			if tt.authHeader != "" {
 				req.Header.Set("Authorization", tt.authHeader)
