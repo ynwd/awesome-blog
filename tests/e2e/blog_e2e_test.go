@@ -66,6 +66,7 @@ func TestBlogServiceFlow(t *testing.T) {
 
 		w := helper.PerformRequest(testApp.Router(), "POST", "/login", payload, "")
 
+		fmt.Println("w.Code", w.Body.String())
 		assert.Equal(t, http.StatusOK, w.Code)
 
 		var response map[string]interface{}
