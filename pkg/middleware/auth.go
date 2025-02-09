@@ -6,58 +6,193 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/ynwd/awesome-blog/pkg/res"
+	"github.com/google/uuid"
 	"github.com/ynwd/awesome-blog/pkg/utils"
 )
 
-func AuthMiddleware(jwt utils.JWT) gin.HandlerFunc {
-	return func(c *gin.Context) {
+type RateLimitConfig struct {
+	AuthedRequests   Config // Rate limit for authenticated requests
+	UnauthedRequests Config // Rate limit for unauthenticated requests
+}
 
-		// Skip auth for login and register paths
+type AuthConfig struct {
+	JWT             utils.JWT
+	RateLimiter     *RateLimiter
+	MaxTokenAge     time.Duration
+	AllowedIssuers  []string
+	SecureCookie    bool
+	CookieDomain    string
+	TrustedProxies  []string
+	AllowedOrigins  []string
+	RateLimits      RateLimitConfig
+	rateLimitAuthed *RateLimiter
+	rateLimitUnauth *RateLimiter
+}
+
+func NewAuthConfig() AuthConfig {
+	return AuthConfig{
+		MaxTokenAge:    15 * time.Minute,
+		AllowedIssuers: []string{"awesome-blog"},
+		SecureCookie:   true,
+		AllowedOrigins: []string{"https://awesome-blog.com"},
+		TrustedProxies: []string{"127.0.0.1"},
+		RateLimits: RateLimitConfig{
+			AuthedRequests: Config{
+				Window:          time.Minute,
+				MaxAttempts:     100, // More lenient for authenticated users
+				CleanupInterval: 5 * time.Minute,
+			},
+			UnauthedRequests: Config{
+				Window:          time.Minute,
+				MaxAttempts:     20, // Stricter for unauthenticated requests
+				CleanupInterval: 5 * time.Minute,
+			},
+		},
+	}
+}
+
+type ErrorResponse struct {
+	Error     string `json:"error"`
+	RequestID string `json:"request_id,omitempty"`
+	Wait      int    `json:"wait_seconds,omitempty"`
+}
+
+func AuthMiddleware(config AuthConfig) gin.HandlerFunc {
+	// Initialize rate limiters
+	config.rateLimitAuthed = NewRateLimiter(config.RateLimits.AuthedRequests)
+	config.rateLimitUnauth = NewRateLimiter(config.RateLimits.UnauthedRequests)
+
+	return func(c *gin.Context) {
+		// Add security headers
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("X-Frame-Options", "DENY")
+		c.Header("X-XSS-Protection", "1; mode=block")
+		c.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		c.Header("Content-Security-Policy", "default-src 'self'")
+		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
+
+		// Generate request ID for tracking
+		requestID := uuid.New().String()
+		c.Set("request_id", requestID)
+
+		clientIP := c.ClientIP()
 		path := c.Request.URL.Path
-		if path == "/login" || path == "/register" {
+
+		// Handle public routes with unauth rate limiter
+		if path == "/api/v1/auth/login" || path == "/api/v1/auth/register" {
+			if !config.rateLimitUnauth.AllowRequest(clientIP) {
+				sendRateLimitError(c)
+				return
+			}
 			c.Next()
 			return
 		}
 
+		// Get token from Authorization header
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
-			c.JSON(http.StatusUnauthorized, res.Error("Authorization header required"))
-			c.Abort()
+			if !config.rateLimitUnauth.AllowRequest(clientIP) {
+				sendRateLimitError(c)
+				return
+			}
+			sendError(c, http.StatusUnauthorized, "Missing authorization header")
 			return
 		}
 
+		// Check Bearer scheme
 		parts := strings.Split(authHeader, " ")
 		if len(parts) != 2 || parts[0] != "Bearer" {
-			c.JSON(http.StatusUnauthorized, res.Error("Invalid authorization format"))
-			c.Abort()
+			if !config.rateLimitUnauth.AllowRequest(clientIP) {
+				sendRateLimitError(c)
+				return
+			}
+			sendError(c, http.StatusUnauthorized, "Invalid authorization format")
 			return
 		}
 
-		// Get current client IP
-		clientIP := c.ClientIP()
+		token := parts[1]
 
-		// Validate token with IP check
-		token, err := jwt.ValidateToken(parts[1], clientIP)
+		// Apply authenticated rate limiting
+		if !config.rateLimitAuthed.AllowRequest(clientIP) {
+			sendRateLimitError(c)
+			return
+		}
+
+		// Create fingerprint for validation
+		fingerprint := &utils.TokenFingerprint{
+			IP:        c.ClientIP(),
+			UserAgent: c.Request.UserAgent(),
+			DeviceID:  c.GetHeader("X-Device-ID"),
+		}
+
+		// Validate token
+		validToken, err := config.JWT.ValidateToken(token, fingerprint)
 		if err != nil {
-			c.JSON(http.StatusUnauthorized, res.Error(err.Error()))
-			c.Abort()
+			sendError(c, http.StatusUnauthorized, "Invalid token")
 			return
 		}
 
-		claims, err := jwt.GetClaims(token)
+		// Get claims
+		claims, err := config.JWT.GetClaims(validToken)
 		if err != nil {
-			c.JSON(http.StatusUnauthorized, res.Error("Invalid token claims"))
-			c.Abort()
+			sendError(c, http.StatusUnauthorized, "Invalid claims")
 			return
 		}
 
-		// Store username from token in context
-		c.Set("username", claims.Username) // Changed from claims.Subject to claims.Username
+		// Validate token age
+		tokenAge := time.Since(claims.IssuedAt.Time)
+		if tokenAge > config.MaxTokenAge {
+			sendError(c, http.StatusUnauthorized, "Token expired")
+			return
+		}
 
-		// Add request timestamp for rate limiting
-		c.Set("request_time", time.Now().Unix())
+		// Validate issuer
+		validIssuer := false
+		for _, issuer := range config.AllowedIssuers {
+			if claims.Issuer == issuer {
+				validIssuer = true
+				break
+			}
+		}
+		if !validIssuer {
+			sendError(c, http.StatusUnauthorized, "Invalid token issuer")
+			return
+		}
+
+		// Set user context
+		c.Set("user_id", claims.UserID)
+		c.Set("auth_time", time.Now().UTC())
+
+		// If token is approaching expiry, send new token in response header
+		if tokenAge > (config.MaxTokenAge / 2) {
+			newToken, err := config.JWT.GenerateToken(claims.UserID, fingerprint)
+			if err == nil {
+				c.Header("X-New-Token", newToken)
+			}
+		}
 
 		c.Next()
 	}
+}
+
+func sendError(c *gin.Context, status int, message string) {
+	requestID, _ := c.Get("request_id")
+	response := ErrorResponse{
+		Error:     message,
+		RequestID: requestID.(string),
+	}
+	c.JSON(status, response)
+	c.Abort()
+}
+
+func sendRateLimitError(c *gin.Context) {
+	requestID, _ := c.Get("request_id")
+	response := ErrorResponse{
+		Error:     "Rate limit exceeded",
+		RequestID: requestID.(string),
+		Wait:      60, // Suggest waiting for 1 minute
+	}
+	c.Header("Retry-After", "60")
+	c.JSON(http.StatusTooManyRequests, response)
+	c.Abort()
 }

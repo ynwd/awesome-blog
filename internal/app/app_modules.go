@@ -20,7 +20,7 @@ func (a *App) setupModules() {
 	if err != nil {
 		log.Fatal("Failed to create JWT:", err)
 	}
-	auth := middleware.AuthMiddleware(jwt)
+	auth := middleware.AuthMiddleware(jwt, "api")
 	a.router.Use(auth)
 
 	// Register modules

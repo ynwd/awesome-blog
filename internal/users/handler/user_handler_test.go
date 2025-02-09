@@ -307,7 +307,7 @@ func TestLoginHandler(t *testing.T) {
 
 func setupTestRouter(h *UserHandler, jwt utils.JWT) *gin.Engine {
 	r := gin.New()
-	r.Use(middleware.AuthMiddleware(jwt))
+	r.Use(middleware.AuthMiddleware(jwt, "api"))
 	r.POST("/login", h.Login)
 	r.POST("/register", h.Register)
 	r.POST("/protected", h.Login) // Add protected path for testing
@@ -322,7 +322,6 @@ func TestLoginHandlerWithMiddleware(t *testing.T) {
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject: "testuser",
 		},
-		IP: "192.168.1.1",
 	}
 
 	// Create test token with claims
