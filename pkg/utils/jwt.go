@@ -1,6 +1,8 @@
 package utils
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -14,54 +16,99 @@ var (
 	ErrExpiredToken          = errors.New("token has expired")
 	ErrInvalidIP             = errors.New("invalid IP address")
 	ErrTokenUsedBeforeIssued = errors.New("token used before issued")
+	ErrInvalidUserAgent      = errors.New("invalid user agent")
+	ErrInvalidDevice         = errors.New("invalid device")
 )
 
 type Claims struct {
 	jwt.RegisteredClaims
-	IP       string `json:"ip"`
-	Username string `json:"username"`
-	Role     string `json:"role,omitempty"`
+	UserID    string `json:"userId"`
+	IP        string `json:"ip"`
+	UserAgent string `json:"userAgent"`
+	DeviceID  string `json:"deviceId"`
+}
+
+type TokenFingerprint struct {
+	IP        string `json:"ip"`
+	UserAgent string `json:"userAgent"`
+	DeviceID  string `json:"deviceId"`
 }
 
 type JWT interface {
-	GenerateToken(username string, ip string) (string, error)
-	ValidateToken(tokenString string, ip string) (*jwt.Token, error)
+	GenerateToken(userID string, fingerprint *TokenFingerprint) (string, error)
+	ValidateToken(tokenString string, fingerprint *TokenFingerprint) (*jwt.Token, error)
+	RevokeToken(tokenID string) error
 	GetClaims(token *jwt.Token) (*Claims, error)
 }
 
-type jwtToken struct {
-	secret string
+// Add TokenBlacklist interface
+type TokenBlacklist interface {
+	Add(tokenID string, expiresAt time.Time) error
+	IsBlacklisted(tokenID string) bool
+	Cleanup() error
 }
 
-func NewJWT() (JWT, error) {
+// Update jwtToken struct to include blacklist
+type jwtToken struct {
+	secret    string
+	blacklist TokenBlacklist
+}
+
+// Update NewJWT to accept blacklist
+func NewJWT(blacklist TokenBlacklist) (JWT, error) {
 	secret := os.Getenv("JWT_SECRET")
 	if len(secret) < 32 {
 		return nil, errors.New("jwt secret must be at least 32 characters")
 	}
 	return &jwtToken{
-		secret: secret,
+		secret:    secret,
+		blacklist: blacklist,
 	}, nil
 }
 
-func (t *jwtToken) GenerateToken(username string, ip string) (string, error) {
+func (t *jwtToken) GenerateToken(userID string, fingerprint *TokenFingerprint) (string, error) {
 	now := time.Now()
+	expirationTime := time.Now().Add(15 * time.Minute)
+
+	tokenID, err := generateTokenID()
+	if err != nil {
+		return "", fmt.Errorf("failed to generate token ID: %w", err)
+	}
+
 	claims := &Claims{
+		UserID:    userID,
+		IP:        fingerprint.IP,
+		UserAgent: fingerprint.UserAgent,
+		DeviceID:  fingerprint.DeviceID,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(now.Add(24 * time.Hour)),
+			ExpiresAt: jwt.NewNumericDate(expirationTime),
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
-			Subject:   username,
-			Issuer:    "awesome-blog",
+			Issuer:    os.Getenv("APPLICATION_NAME"),
+			Subject:   userID,
+			ID:        tokenID,
 		},
-		IP:       ip,
-		Username: username,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(t.secret))
 }
 
-func (t *jwtToken) ValidateToken(tokenString string, currentIP string) (*jwt.Token, error) {
+// Add RevokeToken implementation
+func (t *jwtToken) RevokeToken(tokenID string) error {
+	// Get current time for expiry
+	now := time.Now()
+
+	// Add token to blacklist
+	if err := t.blacklist.Add(tokenID, now.Add(24*time.Hour)); err != nil {
+		return fmt.Errorf("failed to revoke token: %w", err)
+	}
+
+	return nil
+}
+
+// Update ValidateToken to check blacklist
+func (t *jwtToken) ValidateToken(tokenString string, fingerprint *TokenFingerprint) (*jwt.Token, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
@@ -85,9 +132,9 @@ func (t *jwtToken) ValidateToken(tokenString string, currentIP string) (*jwt.Tok
 		return nil, ErrInvalidToken
 	}
 
-	// Validate IP
-	if claims.IP != currentIP {
-		return nil, ErrInvalidIP
+	// Check if token is blacklisted
+	if t.blacklist.IsBlacklisted(claims.ID) {
+		return nil, ErrInvalidToken
 	}
 
 	// Check if token is used before it was issued
@@ -96,9 +143,15 @@ func (t *jwtToken) ValidateToken(tokenString string, currentIP string) (*jwt.Tok
 		return nil, ErrTokenUsedBeforeIssued
 	}
 
-	// Check expiration
-	if claims.ExpiresAt != nil && claims.ExpiresAt.Before(now) {
-		return nil, ErrExpiredToken
+	// Validate fingerprint
+	if claims.IP != fingerprint.IP {
+		return nil, ErrInvalidIP
+	}
+	if claims.UserAgent != fingerprint.UserAgent {
+		return nil, ErrInvalidUserAgent
+	}
+	if claims.DeviceID != fingerprint.DeviceID {
+		return nil, ErrInvalidDevice
 	}
 
 	return token, nil
@@ -110,4 +163,13 @@ func (t *jwtToken) GetClaims(token *jwt.Token) (*Claims, error) {
 		return nil, ErrInvalidToken
 	}
 	return claims, nil
+}
+
+// generateTokenID creates a cryptographically secure random token ID
+func generateTokenID() (string, error) {
+	bytes := make([]byte, 16) // 16 bytes = 128 bits
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
 }

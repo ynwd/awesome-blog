@@ -40,4 +40,6 @@ func SetTestEnv() {
 	os.Setenv("GOOGLE_CLOUD_FIRESTORE_COLLECTION_LIKES", "likes")
 	os.Setenv("GOOGLE_CLOUD_PUBSUB_TOPIC", "blogpubsub-yanu-widodo")
 	os.Setenv("GOOGLE_CLOUD_PUBSUB_SUBSCRIPTION", "blogpubsub-yanu-widodo-sub")
+	os.Setenv("JWT_SECRET", "LmogQeUKR3rL7JaGG2UtrPJ0TrZyTfFm")
+	os.Setenv("SESSION_SECRET", "secret")
 }

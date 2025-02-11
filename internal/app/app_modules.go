@@ -8,22 +8,11 @@ import (
 	"github.com/ynwd/awesome-blog/internal/posts"
 	"github.com/ynwd/awesome-blog/internal/summary"
 	"github.com/ynwd/awesome-blog/internal/users"
-	"github.com/ynwd/awesome-blog/pkg/middleware"
 	"github.com/ynwd/awesome-blog/pkg/module"
-	"github.com/ynwd/awesome-blog/pkg/utils"
 )
 
+// setupModules sets up the modules for the app
 func (a *App) setupModules() {
-
-	// Setup middleware
-	jwt, err := utils.NewJWT()
-	if err != nil {
-		log.Fatal("Failed to create JWT:", err)
-	}
-	auth := middleware.AuthMiddleware(jwt)
-	a.router.Use(auth)
-
-	// Register modules
 	client, err := a.firestoreDB.Client()
 	if err != nil {
 		log.Fatal("Failed to get firestore client:", err)

@@ -51,7 +51,7 @@ func TestBlogServiceFlow(t *testing.T) {
 			"password": "Test123!",
 		}
 
-		w := helper.PerformRequest(testApp.Router(), "POST", "/register", requestBody, "")
+		w := helper.PerformRequest(testApp.Router(), "POST", "/api/v1/auth/register", requestBody, "")
 		if w.Code != 201 {
 			t.Fatalf("Expected status code 201, got %d", w.Code)
 		}
@@ -64,7 +64,7 @@ func TestBlogServiceFlow(t *testing.T) {
 			"password": password,
 		}
 
-		w := helper.PerformRequest(testApp.Router(), "POST", "/login", payload, "")
+		w := helper.PerformRequest(testApp.Router(), "POST", "/api/v1/auth/login", payload, "")
 
 		fmt.Println("w.Code", w.Body.String())
 		assert.Equal(t, http.StatusOK, w.Code)
@@ -81,7 +81,7 @@ func TestBlogServiceFlow(t *testing.T) {
 			"username": userName,
 			"password": "wrongpassword",
 		}
-		w := helper.PerformRequest(testApp.Router(), "POST", "/login", payload, "")
+		w := helper.PerformRequest(testApp.Router(), "POST", "/api/v1/auth/login", payload, "")
 
 		assert.Equal(t, http.StatusUnauthorized, w.Code)
 	})
@@ -95,6 +95,7 @@ func TestBlogServiceFlow(t *testing.T) {
 			"description": "This is a test blog post description",
 		}
 		w := helper.PerformRequest(testApp.Router(), "POST", "/post", payload, authToken)
+		fmt.Println("w.Code", w.Body.String())
 		assert.Equal(t, http.StatusCreated, w.Code)
 
 		var response map[string]interface{}

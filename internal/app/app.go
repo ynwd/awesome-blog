@@ -47,7 +47,13 @@ func NewApp(cfg *config.Config) *App {
 		pubsub:      pubsubClient,
 	}
 
+	// Setup middleware
+	app.setupMiddleware()
+
+	// Setup modules
 	app.setupModules()
+
+	// Subscribe to PubSub
 	app.pubSubSubsribe(ctx)
 	return app
 }

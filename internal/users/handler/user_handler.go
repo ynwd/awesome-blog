@@ -71,11 +71,15 @@ func (h *UserHandler) Login(c *gin.Context) {
 		return
 	}
 
-	// Get client IP
-	clientIP := c.ClientIP()
+	// Generate token fingerprint
+	fingerprint := &utils.TokenFingerprint{
+		IP:        c.ClientIP(),
+		UserAgent: c.Request.UserAgent(),
+		DeviceID:  c.GetHeader("X-Device-ID"),
+	}
 
-	// Generate token with IP
-	token, err := h.jwtToken.GenerateToken(user.Username, clientIP)
+	// Generate token with appropriate audiences
+	token, err := h.jwtToken.GenerateToken(user.Username, fingerprint)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, res.Response{
 			Status:  "error",
