@@ -17,26 +17,21 @@ type RateLimitConfig struct {
 }
 
 type AuthConfig struct {
-	JWT            utils.JWT
-	RateLimiter    *RateLimiter
-	MaxTokenAge    time.Duration
-	AllowedIssuers []string
-	SecureCookie   bool
-	CookieDomain   string
-	// TrustedProxies []string
-	// AllowedOrigins  []string
+	JWT             utils.JWT
+	RateLimiter     *RateLimiter
+	MaxTokenAge     time.Duration
+	AllowedIssuers  []string
 	RateLimits      RateLimitConfig
 	rateLimitAuthed *RateLimiter
 	rateLimitUnauth *RateLimiter
+	// TrustedProxies []string
+	// AllowedOrigins  []string
 }
 
 func NewAuthConfig() AuthConfig {
 	return AuthConfig{
 		MaxTokenAge:    15 * time.Minute,
 		AllowedIssuers: []string{os.Getenv("APPLICATION_NAME")},
-		SecureCookie:   true,
-		// AllowedOrigins: []string{"https://awesome-blog.com"},
-		// TrustedProxies: []string{"127.0.0.1"},
 		RateLimits: RateLimitConfig{
 			AuthedRequests: Config{
 				Window:          time.Minute,
@@ -49,6 +44,8 @@ func NewAuthConfig() AuthConfig {
 				CleanupInterval: 5 * time.Minute,
 			},
 		},
+		// AllowedOrigins: []string{"https://awesome-blog.com"},
+		// TrustedProxies: []string{"127.0.0.1"},
 	}
 }
 
