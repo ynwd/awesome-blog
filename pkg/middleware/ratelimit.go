@@ -6,17 +6,17 @@ import (
 )
 
 type RateLimiter struct {
-	attempts    map[string][]time.Time
-	mu          sync.RWMutex
-	window      time.Duration
-	maxAttempts int
-	cleanup     *time.Ticker
+	attempts    map[string][]time.Time // Stores attempts per IP
+	mu          sync.RWMutex           // Protects the map
+	window      time.Duration          // Time window for rate limiting
+	maxAttempts int                    // Maximum number of attempts allowed in the window
+	cleanup     *time.Ticker           // Periodic cleanup of old entries
 }
 
 type Config struct {
-	Window          time.Duration
-	MaxAttempts     int
-	CleanupInterval time.Duration
+	Window          time.Duration // Time window for rate limiting
+	MaxAttempts     int           // Maximum number of attempts allowed in the window
+	CleanupInterval time.Duration // How often to clean up old entries
 }
 
 func NewRateLimiter(cfg Config) *RateLimiter {
