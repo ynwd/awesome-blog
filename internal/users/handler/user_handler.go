@@ -71,8 +71,15 @@ func (h *UserHandler) Login(c *gin.Context) {
 		return
 	}
 
+	// Generate token fingerprint
+	fingerprint := &utils.TokenFingerprint{
+		IP:        c.ClientIP(),
+		UserAgent: c.Request.UserAgent(),
+		DeviceID:  c.GetHeader("X-Device-ID"),
+	}
+
 	// Generate token with appropriate audiences
-	token, err := h.jwtToken.GenerateToken(user.Username, []string{"api"})
+	token, err := h.jwtToken.GenerateToken(user.Username, fingerprint)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, res.Response{
 			Status:  "error",

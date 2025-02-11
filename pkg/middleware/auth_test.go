@@ -164,17 +164,26 @@ func TestRateLimiting(t *testing.T) {
 	config.RateLimits.UnauthedRequests.MaxAttempts = 2
 	config.RateLimits.UnauthedRequests.Window = time.Minute
 
+	// Create new router for each test to ensure clean rate limit state
 	router := setupTestRouter(config)
+
+	ip := "192.168.1.1"
 
 	for i := 0; i < 3; i++ {
 		w := httptest.NewRecorder()
 		req, _ := http.NewRequest("POST", "/api/v1/auth/login", nil)
+		// Set client IP consistently
+		req.Header.Set("X-Real-IP", ip)
+		req.Header.Set("X-Forwarded-For", ip)
+		req.RemoteAddr = ip + ":12345"
+
 		router.ServeHTTP(w, req)
 
 		if i < 2 {
-			assert.Equal(t, http.StatusOK, w.Code)
+			assert.Equal(t, http.StatusOK, w.Code, "Request %d should be allowed", i+1)
 		} else {
-			assert.Equal(t, http.StatusTooManyRequests, w.Code)
+			assert.Equal(t, http.StatusTooManyRequests, w.Code, "Request %d should be rate limited", i+1)
+			assert.Contains(t, w.Body.String(), "Rate limit exceeded")
 		}
 	}
 }

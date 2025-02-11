@@ -23,8 +23,11 @@ func NewModule(firestoreClient *firestore.Client) *Module {
 	// Initialize service with repository
 	userService := service.NewUserService(userRepo)
 
+	// Initialize blacklist
+	blackList := utils.NewMemoryBlacklist()
+
 	// Initialize handler with service
-	jwt, err := utils.NewJWT()
+	jwt, err := utils.NewJWT(blackList)
 	if err != nil {
 		panic(err)
 	}
